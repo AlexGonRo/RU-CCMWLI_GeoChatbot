@@ -2,12 +2,24 @@ import xml.etree.ElementTree as ET
 import re
 from nltk.corpus import stopwords
 import pandas as pd
-
-
+import numpy as np
+from gensim.models import Word2Vec
+from gensim.models import KeyedVectors
+import gzip
+import pickle as cPickle
+import numpy as np
+import pandas as pd
 
 def preproc(data_path = 'data/data.xml'):
     tree = ET.parse(data_path)
     root = tree.getroot()
+
+    EMBEDDING_FILE = './model/GoogleNews-vectors-negative300.bin'
+    # model = Word2Vec.load(EMBEDDING_FILE)
+
+    word2vec = KeyedVectors.load_word2vec_format(EMBEDDING_FILE, \
+                                                 binary=True)
+    print("Loaded model")
 
     citylist = []
 
@@ -60,8 +72,6 @@ def preproc(data_path = 'data/data.xml'):
                             for text in text_in_brackets:
                                 if ".JPEG" in text or ".JPG" in text or ".jpeg" in text or ".jpg" in text :
                                     description = description.replace(text,'')
-                                    #description = re.sub(text, "",
-                                    #                     description)  # Remove everything between [[...]]
                                 else:
                                     description =  description.replace(text, text[2:len(text)-2])  # Remove [[...]]
 
@@ -100,25 +110,26 @@ def preproc(data_path = 'data/data.xml'):
                             description = "".join(str(x) for x in description_char)
                             # Remove stuff
                             # description = re.sub("[\\\{\}\[\]\\n]", "", description)
+                            vector = vectorize(word2vec, description)
                         else:
                             add_entry = False
                             break
 
             if add_entry:
-                citylist.append([key, short_description, description])
+                citylist.append([key, short_description, description, vector])
 
             counter += 1
             if (counter >= 20):
                 break;
 
     df = pd.DataFrame([[key, s_d, d] for key,s_d,d in citylist])
-    df.columns = ['city_name', "short_description", "description"]
+    df.columns = ['city_name', "short_description", "description", "vector"]
     df.to_csv("proc_data/proc_data.csv")
 
 
 def get_short_description(description):
     description = re.sub("'''", " ", description)
-    description = description.split('.', 1)
+    description = description.split('.')
     if len(description)>1:
         description = description[0] + " " + description [1]
     elif len(description)==1:
@@ -127,5 +138,34 @@ def get_short_description(description):
         description = None
 
     return description
+
+
+def vectorize(word2vec, sentence, num_features=300):
+    mywords = sentence.split(" ")
+    myvector = np.zeros((num_features),dtype="float32")
+
+    i = 0
+    for word in mywords:
+        #print word
+        if word in word2vec.vocab:
+            myvector = np.add(myvector,word2vec[word]) # Adding every new vector
+            i+=1
+    featureVec = np.divide(myvector, i) # and in the end dividing it by the number of words
+
+    return featureVec
+
+def eucDistance(vector1, vector2):
+    euclid = 0.0
+    for (dim1, dim2) in zip(vector1, vector2):
+        euclid = euclid +(dim1-dim2)*(dim1-dim2)
+        #print dim1, dim2
+    euclid = np.sqrt(euclid)
+    return euclid
+def maxDistance(vector1, vector2):
+    return max(np.abs(np.substract(vector1,vector2)))
+def minDistance(vec1, vec2):
+    return min(np.abs(np.substract(vec1,vec2)))
+
+
 
 preproc()

@@ -1,6 +1,7 @@
 from __future__ import print_function, unicode_literals
 import random
 import logging
+import numpy as np
 
 # Import for DistanceMatrix
 from datetime import datetime
@@ -157,7 +158,12 @@ class NLP:
 
 	def describe_city(self, city):
 		index = self.data.city_name[self.data.city_name == city].index.tolist()[0]
-		return self.data.iloc[index]['description']
+		description = self.data.iloc[index]['short_description']
+		description = description + ". Read more about it in https://en.wikivoyage.org/wiki/{}".format(city)
+		return description
+
+#	def propose_alternatives(self, cities):
+
 
 	# That's the main function that returns our response
 	def respond(self, sentence):
@@ -183,8 +189,9 @@ class NLP:
 
 		# Check if the user is looking for a suggestion
 		parsed = parser(sentence)
-		user_description = self.look_for_description(parsed)
-
+		resp = self.look_for_description(parsed)
+		if resp is not None:
+			return resp
 
 		# If none of the above is correct
 		resp = self.random_answer()
@@ -223,27 +230,55 @@ class NLP:
 				adj = token
 				dict_noun_adjs[noun] = adj
 
-		description = ""
+		user_input = ""
 		# In case we want to cut posesives refering to a person
 		# for key, value in dict_noun_adjs.iteritems(): In python 2
 		#for key, value in dict_noun_adjs.items():
 		#	if key.pos_ == 'PRON' # This is a pronoun
 		#       # DO NOT COUNT THIS ONE
-
 		for key, value in dict_noun_adjs.items():
-			description += key.text
+			user_input += key.text
 			try:
-				description += " ".join([word.text for word in value])
+				user_input += " ".join([word.text for word in value])
 			except TypeError:
-				description += " " + value.text
+				user_input += " " + value.text
 
 
+		tmp = self.data['vector'].tolist()
+		index = self.findBestMatch(self.vectorize(user_input), tmp)
 
-		return description
+		return self.data.iloc[index]['city_name']
 
 
+	def findBestMatch(self, vec1, vecarray):
+		distances = np.zeros(len(vecarray))
+		for i in range(0, len(vecarray)):
+			distances[i] = self.eucDistance(vec1, vecarray[i])
+		index = distances.argmin()
+		return index
 
-#def main():
+	def eucDistance(self, vector1, vector2):
+		euclid = 0.0
+		for (dim1, dim2) in zip(vector1, vector2):
+			euclid = euclid + (dim1 - dim2) * (dim1 - dim2)
+		# print dim1, dim2
+		euclid = np.sqrt(euclid)
+		return euclid
+
+	def vectorize(self, word2vec, sentence, num_features=300):
+		mywords = sentence.split(" ")
+		myvector = np.zeros((num_features), dtype="float32")
+
+		i = 0
+		for word in mywords:
+			# print word
+			if word in word2vec.vocab:
+				myvector = np.add(myvector, word2vec[word])  # Adding every new vector
+				i += 1
+		featureVec = np.divide(myvector, i)  # and in the end dividing it by the number of words
+
+		return featureVec
+	#def main():
 #	nlp = NLP()
 #	if (len(sys.argv) > 0):
 #		saying = sys.argv[1]
