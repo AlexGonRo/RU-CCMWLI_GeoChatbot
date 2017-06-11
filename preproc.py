@@ -9,7 +9,7 @@ def preproc(data_path = 'data/data.xml'):
     tree = ET.parse(data_path)
     root = tree.getroot()
 
-    citylist = dict()
+    citylist = []
 
     counter = 0
     char_list = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKMNOPQRSTUVWXYZ "
@@ -19,6 +19,7 @@ def preproc(data_path = 'data/data.xml'):
     re_revision = re.compile(r'revision')
     re_text = re.compile(r'text')
     re_cutter = re.compile(r'.*?==', re.DOTALL)
+    MULT_SPACES = re.compile(r'\s+')
 
     for child in root:
         # Handle special case
@@ -50,21 +51,44 @@ def preproc(data_path = 'data/data.xml'):
                             if len(description) < char_threshold:
                                 add_entry = False
                                 break
+
+                            # Handle &nbsp;
+                            description = re.sub('&nbsp;', ' ', description)
+
                             # Handle [[...]]
                             text_in_brackets = re.findall("\[\[[^\]]*\]\]", description)
                             for text in text_in_brackets:
-                                if ".jpeg" in text or ".JPG" in text:
+                                if ".JPEG" in text or ".JPG" in text or ".jpeg" in text or ".jpg" in text :
                                     description = description.replace(text,'')
                                     #description = re.sub(text, "",
                                     #                     description)  # Remove everything between [[...]]
                                 else:
                                     description =  description.replace(text, text[2:len(text)-2])  # Remove [[...]]
+
+                            # Handle [...]
+                            text_in_brackets = re.findall("\[[^\]]*\]", description)
+                            if text_in_brackets:
+                                for text in text_in_brackets:
+                                    text_splitted = text.split(" ")
+                                    description = description.replace(text_splitted[0], "")
+                                    rest_text = " ".join(text_splitted[1:])
+                                    description = description.replace(rest_text, rest_text[:len(rest_text)-1])
+
                             # Handle {{...}}
                             description = re.sub("\{\{[^\}]*\}\}", "", description)  # Remove everything between {{...}}
-                            # Handle the '
-                            description = re.sub("'''", " ", description)
+
                             # Handle the \n
                             description = description.replace("\n", '')
+
+                            # Get first two sentences of text
+                            short_description = get_short_description(description)
+                            short_description = MULT_SPACES.sub(' ', short_description) # Make sure that there is just
+                                                                                        # one space between words.
+                            if short_description[0] == ' ':
+                                short_description = short_description[1:]
+
+                            # Handle the '
+                            description = re.sub("'''", " ", description)
                             # Everything goes to lowercase
                             description = description.lower()
                             # Remove stopwords
@@ -81,15 +105,27 @@ def preproc(data_path = 'data/data.xml'):
                             break
 
             if add_entry:
-                citylist[key] = description
+                citylist.append([key, short_description, description])
 
             counter += 1
             if (counter >= 20):
                 break;
-    # df = pd.DataFrame([[key,value] for key,value in citylist.iteritems()]) in python 2
-    df = pd.DataFrame([[key,value] for key,value in citylist.items()])
-    df.columns = ['city_name', "description"]
+
+    df = pd.DataFrame([[key, s_d, d] for key,s_d,d in citylist])
+    df.columns = ['city_name', "short_description", "description"]
     df.to_csv("proc_data/proc_data.csv")
 
 
-# preproc()
+def get_short_description(description):
+    description = re.sub("'''", " ", description)
+    description = description.split('.', 1)
+    if len(description)>1:
+        description = description[0] + " " + description [1]
+    elif len(description)==1:
+        description = description.split('.', 1)[0]
+    else:
+        description = None
+
+    return description
+
+preproc()
