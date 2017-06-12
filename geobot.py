@@ -5,7 +5,7 @@ import urllib
 import config
 from nlp import NLP
 import os.path
-import preproc
+#from preproc import preproc --> Because of Memory
 import pandas as pd
 
 URL = "https://api.telegram.org/bot{}/".format(config.TOKEN)
@@ -73,8 +73,8 @@ def handle_updates(updates, nlp):
 
 def main():
     last_update_id = None
-    if not os.path.isfile("proc_data/proc_data.csv"):
-        preproc()
+    #if not os.path.isfile("proc_data/proc_data.csv"): # Outcommented because of memory
+    #    preproc()
     df = pd.DataFrame.from_csv("proc_data/proc_data.csv")
     nlp = NLP(df)
     print("The bot is now active")
