@@ -84,7 +84,7 @@ def main():
         word_index = pickle.load(outfile)
     with open("word_vectors/embedding_matrix.csv", 'rb') as outfile:
         embedding_matrix = pickle.load(outfile)
-    nlp = NLP(df, encoder, word_index, embedding_matrix)
+    nlp = NLP(df, encoder, word_index, embedding_matrix, 200, 200)
     print("The bot is now active")
     while True:
         updates = get_updates(last_update_id)

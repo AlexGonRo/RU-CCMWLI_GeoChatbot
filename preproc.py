@@ -7,26 +7,35 @@ from keras.preprocessing.text import Tokenizer
 import os
 import pickle
 from seq2seq import Seq2seq
-
+from utils import seqWords2seqVec
 
 def preproc(data_path = 'data/data.xml'):
 
-    tree = ET.parse(data_path)
-    root = tree.getroot()
 
+    # counter = 0 For testing porpuses
+
+    # Array with all the information extracted from the data
     citylist = []
-
-    counter = 0
+    # Valid characters
     char_list = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKMNOPQRSTUVWXYZ "
+    # Minimum length of the description (in characters)
     char_threshold = 100
 
+    # Regular expressions
     re_title = re.compile(r'title')
     re_revision = re.compile(r'revision')
     re_cutter = re.compile(r'.*?==', re.DOTALL)
     re_spaces = re.compile(r'\s+')
 
+    # Variables to navigate the xml file
+    tree = ET.parse(data_path)
+    root = tree.getroot()
+
+    print("Starting to extract the descriptions of the cities.")
     count = 0
     for child in root:
+
+        # Print run information
         count += 1
         if count % 5000 == 0:
             print('{} cities have been preprocessed.'.format(count))
@@ -131,22 +140,27 @@ def preproc(data_path = 'data/data.xml'):
             #    break;
 
 
-    print("I parsed all the cities.")
-    print("Getting the description embeddings...")
+    print("All the cities have been preprocessed.")
+
+    print("Loading word embeddings...")
     word_index, embedding_matrix = get_vocabulary(citylist, 200)
-    descriptions = [row[2] for row in citylist]
+
+    print("Calculating the description embeddings...")
     # Option 1
+    # descriptions = [row[2] for row in citylist]
     # vector = [vectorize(word_index, embedding_matrix, description, 200) for description in descriptions]
     # Option 2
-    vector = vectorize_nn(word_index, embedding_matrix, descriptions, 200)
+    descriptions = [row[2] for row in citylist]
+    vector = vectorize_nn(word_index, embedding_matrix, descriptions, num_vectors = 200, num_features=200,
+                          batch_size=32, latent_dim = 200, timesteps = 200, epochs = 5)
 
+    print("Grouping all the information together...")
     citylist = [x + [vector[i]] for i, x in enumerate(citylist)]
-    print("Every description has a vector representation.")
-    print("Saving...")
+    print("Saving data...")
     df = pd.DataFrame([[key, s_d, d, v] for key,s_d,d,v in citylist])
     df.columns = ['city_name', "short_description", "description", "vector"]
     df.to_pickle("proc_data/proc_data.pkl")
-    print("The preprocesing is done")
+    print("The preprocesing is done.")
 
 
 def get_short_description(description):
@@ -161,40 +175,36 @@ def get_short_description(description):
 
     return description
 
-def vectorize_nn(word_index, embedding_matrix, sentences, num_features=200):
-
+def vectorize_nn(word_index, embedding_matrix, sentences, max_num_vectors = 200, num_features=200, batch_size=32,
+                 latent_dim = 200, timesteps = 200, epochs = 5):
+    print("Substituting words in descriptions by their vector representetion")
     vec_sentences = []
+    sec_count = 0
     for i, sentence in enumerate(sentences):
-        vector = []
-        mywords = sentence.split(" ")
-        count = 0
-        for word in mywords:
-            # print word
-            if word in word_index:
-                vector.append(embedding_matrix[word_index[word]])
-                count += 1
-        if count < 200:
-            while True:
-                tmp = [0 for i in range(200)]
-                vector.append(tmp)
-                if len(vector) == num_features:
-                    break
-        elif count > 200:
-            vector = vector[:200]
-            
+        # Print run information
+        sec_count += 1
+        if sec_count % 5000 == 0:
+            print('{} descriptions have been preprocessed.'.format(sec_count))
+
+        vector = seqWords2seqVec(sentence, word_index, embedding_matrix, max_num_vectors, num_features)
+
+        # Store vector
         vector = np.asarray(vector)
         vec_sentences.append(vector)
 
-    s2s = Seq2seq(200,200,200,32, word_index, embedding_matrix)
+    print("All words have been subtituted by their vector representation")
+
     vec_sentences = np.asarray(vec_sentences)
-    a = np.shape(vec_sentences)
-    vec_sentences = np.reshape(vec_sentences,(len(sentences), 200, 200))
-    a = np.shape(vec_sentences)
-    s2s.fit(vec_sentences,epochs=2)
+    vec_sentences = np.reshape(vec_sentences,(len(sentences), num_vectors, num_features))
+    # Create and train Neural net
+    s2s = Seq2seq(num_vectors, latent_dim, timesteps, batch_size, word_index, embedding_matrix)
+    print("Training autoencoder...")
+    s2s.fit(vec_sentences,epochs)
+    print("Getting vector representation of each description...")
     predictions = s2s.predict(vec_sentences)
+    print("Saving neural network...")
     s2s.encoder.save('model/encoder.h5')
     return predictions
-
 
 
 
@@ -204,7 +214,6 @@ def vectorize(word_index, embedding_matrix, sentence, num_features=300):
 
     i = 0
     for word in mywords:
-        #print word
         if word in word_index:
             myvector = np.add(myvector,embedding_matrix[word_index[word]]) # Adding every new vector
             i+=1
@@ -212,24 +221,7 @@ def vectorize(word_index, embedding_matrix, sentence, num_features=300):
 
     return featureVec
 
-def eucDistance(vector1, vector2):
-    euclid = 0.0
-    for (dim1, dim2) in zip(vector1, vector2):
-        euclid = euclid +(dim1-dim2)*(dim1-dim2)
-        #print dim1, dim2
-    euclid = np.sqrt(euclid)
-    return euclid
-
-
-def maxDistance(vector1, vector2):
-    return max(np.abs(np.substract(vector1,vector2)))
-
-
-def minDistance(vec1, vec2):
-    return min(np.abs(np.substract(vec1,vec2)))
-
-
-def get_vocabulary(citylist, vec_size = 100):
+def get_vocabulary(citylist, vec_size = 200):
 
     short_descriptions = [row[1] for row in citylist]
     descriptions = [row[2] for row in citylist]

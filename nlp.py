@@ -3,7 +3,7 @@ import random
 import logging
 import numpy as np
 import word_lists
-from ast import literal_eval
+from utils import seqWords2seqVec, eucDistance
 #####
 
 
@@ -13,11 +13,14 @@ logger.setLevel(logging.DEBUG)
 
 
 class NLP:
-	def __init__(self, data, encoder, word_inxed, embedding_matrix):
+	def __init__(self, data, encoder, word_inxed, embedding_matrix, max_num_vectors, num_features):
 		self.data = data # THE PANDA DF
 		self.encoder = encoder
 		self.word_index = word_inxed
 		self.embedding_matrix = embedding_matrix
+		self.max_num_vectors = max_num_vectors
+		self.num_features = num_features
+
 
 	def random_answer(self):
 		return random.choice(word_lists.GENERAL_RESPONSES)
@@ -97,7 +100,9 @@ class NLP:
 			return resp
 
 		else:
-			return self.match_description(sentence)
+			indexes = self.match_description(sentence)
+			resp = self.suggest_city(indexes)
+			return resp
 			
 		# Check if the user is looking for a suggestion
 		#parsed = parser(sentence)
@@ -118,41 +123,27 @@ class NLP:
 	def match_description(self, sentence): # Without Parsing via Spacy
 		descriptions = np.array(self.data.loc[:]['short_description'])
 		vectors = self.data['vector']
-		print("I am still good")
-		# Pad sentence
-		vector = []
-		mywords = sentence.split(" ")
-		count = 0
-		for word in mywords:
-			# print word
-			if word in self.word_index:
-				vector.append(self.embedding_matrix[self.word_index[word]])
-				count += 1
-		if count < 200:
-			while True:
-				tmp = [0 for i in range(200)]
-				vector.append(tmp)
-				if len(vector) == 200:
-					break
-		elif count > 200:
-			vector = vector[:200]
+
+		vector = seqWords2seqVec(sentence, self.word_index, self.embedding_matrix, self.max_num_vectors, self.num_features)
 
 		sentencevec = self.encoder.predict(np.asarray([vector]))[0]
-		index = self.findBestMatch(sentencevec, vectors)
-		return descriptions[index]
+		indexes = self.findBestMatch(sentencevec, vectors)
+		return indexes
 
 
 	def findBestMatch(self, vector, descriptions):
 		distances = np.zeros(len(descriptions))
 		for i in range(0, len(descriptions)):
-			distances[i] = self.eucDistance(vector, descriptions[i])
-		index = distances.argmin()
-		return index
+			distances[i] = eucDistance(vector, descriptions[i])
+		indexes = distances.argsort()[:3]
+		return indexes
 
-	def eucDistance(self, vector1, vector2):
-		euclid = 0.0
-		for (dim1, dim2) in zip(vector1, vector2):
-			euclid = euclid + (dim1 - dim2) * (dim1 - dim2)
-		# print dim1, dim2
-		euclid = np.sqrt(euclid)
-		return euclid
+	def suggest_city(self, indexes):
+		resp = 'I would suggest {} cities:\n'.format(len(indexes))
+		city_names = self.data['city_name'].tolist()
+		city_descrp = self.data['short_description'].tolist()
+		for index in indexes:
+			resp += city_names[index] + ": " + city_descrp[index]
+			resp += ". Read more about it in https://en.wikivoyage.org/wiki/{}".format(city_names[index])
+			resp += "\n"
+		return resp
