@@ -4,11 +4,11 @@ GENERAL_RESPONSES = ("We will see", "Ok, but that's not really true", "You wanna
                      "Even a broken watch is two times right per day...")
 
 GREETING_SET = (
-    "hello", "hi", "yo", "how are you", "hi man", "hey", "what's up", "good morning", "good evening",
-    "good afternoon")
+    "hello", "hi", "yo", "how are you", "hi man", "hey", "what's up", "good to see you")
 GREETING_RESPONSES = (
-    "hello back !", "hi, how are you ?", "What's up", "Nice to hear from you, how can I serve ?", "Good Day")
+    "Hello back !", "Hi, how are you ?", "What's up", "Nice to hear from you, how can I serve ?", "Good Day",
+    "Hello, how’s everything going?", 'Hi, how\'s it going?')
 
-INTRODUCTION = "Hello. I am LASTMINUTE-HELPER. If you want to go for a city trip and you haven't decided yet where to,\
-then I'm your man...amm bot. I can help you to decide between 2 cities, give you more information about 1 city or even \
-give you my personal suggestion of the day if you don't have any plan. But first things first: What's your origin ?"
+INTRODUCTION = "Hello. I am TRIP-SUGGESTER. If you want to go for a city trip and you haven't decided yet where to,\
+then I'm your man...amm bot. I can advise you where to go according to your preferences or offering information about" \
+"any city. Tell me, where would you like to go?"

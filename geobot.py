@@ -5,11 +5,12 @@ import urllib
 import config
 from nlp import NLP
 import os.path
-#from preproc import preproc --> Because of Memory
+from preproc import preproc
 import pandas as pd
+from keras.models import load_model
+import pickle
 
 URL = "https://api.telegram.org/bot{}/".format(config.TOKEN)
-
 
 #///////////////////////////////////////////////
 
@@ -73,10 +74,17 @@ def handle_updates(updates, nlp):
 
 def main():
     last_update_id = None
-    #if not os.path.isfile("proc_data/proc_data.csv"): # Outcommented because of memory
-    #    preproc()
-    df = pd.DataFrame.from_csv("proc_data/proc_data.csv")
-    nlp = NLP(df)
+    if not os.path.isfile("proc_data/proc_data.pkl"):
+        preproc()
+    if not os.path.isfile("model/encoder.h5"):
+        preproc()
+    df = pd.read_pickle("proc_data/proc_data.pkl")
+    encoder = load_model("model/encoder.h5")
+    with open("word_vectors/word_indx.csv", 'rb') as outfile:
+        word_index = pickle.load(outfile)
+    with open("word_vectors/embedding_matrix.csv", 'rb') as outfile:
+        embedding_matrix = pickle.load(outfile)
+    nlp = NLP(df, encoder, word_index, embedding_matrix)
     print("The bot is now active")
     while True:
         updates = get_updates(last_update_id)

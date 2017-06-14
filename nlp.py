@@ -2,33 +2,22 @@ from __future__ import print_function, unicode_literals
 import random
 import logging
 import numpy as np
-
-# Import for DistanceMatrix
-from datetime import datetime
-import config
-#from spacy.en import English
 import word_lists
-#Import for Match best City
-from word2vec import *
-
-key = 'AIzaSyDhjoU4gFGIJ5VTTaexR_4_tDoaMvbgCaA'
+from ast import literal_eval
 #####
-
-# os.environ['NLTK_DATA'] = os.getcwd() + '/nltk_data'
-
-# Set up spaCy
 
 
 logging.basicConfig()
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
-#parser = English()
 
 
 class NLP:
-	def __init__(self, data, w2vmodel, descriptions_vec):
+	def __init__(self, data, encoder, word_inxed, embedding_matrix):
 		self.data = data # THE PANDA DF
-		self.w2vec = Word2Vec(w2vmodel, descriptions_vec)
+		self.encoder = encoder
+		self.word_index = word_inxed
+		self.embedding_matrix = embedding_matrix
 
 	def random_answer(self):
 		return random.choice(word_lists.GENERAL_RESPONSES)
@@ -127,10 +116,43 @@ class NLP:
 
 
 	def match_description(self, sentence): # Without Parsing via Spacy
-		df = self.data
-		descriptions = np.array(self.data.loc[:]['description'])
+		descriptions = np.array(self.data.loc[:]['short_description'])
+		vectors = self.data['vector']
 		print("I am still good")
-		sentencevec = self.w2vec.vectorize(sentence)
-		index = self.w2vec.findBestMatch(sentencevec)
+		# Pad sentence
+		vector = []
+		mywords = sentence.split(" ")
+		count = 0
+		for word in mywords:
+			# print word
+			if word in self.word_index:
+				vector.append(self.embedding_matrix[self.word_index[word]])
+				count += 1
+		if count < 200:
+			while True:
+				tmp = [0 for i in range(200)]
+				vector.append(tmp)
+				if len(vector) == 200:
+					break
+		elif count > 200:
+			vector = vector[:200]
+
+		sentencevec = self.encoder.predict(np.asarray([vector]))[0]
+		index = self.findBestMatch(sentencevec, vectors)
 		return descriptions[index]
 
+
+	def findBestMatch(self, vector, descriptions):
+		distances = np.zeros(len(descriptions))
+		for i in range(0, len(descriptions)):
+			distances[i] = self.eucDistance(vector, descriptions[i])
+		index = distances.argmin()
+		return index
+
+	def eucDistance(self, vector1, vector2):
+		euclid = 0.0
+		for (dim1, dim2) in zip(vector1, vector2):
+			euclid = euclid + (dim1 - dim2) * (dim1 - dim2)
+		# print dim1, dim2
+		euclid = np.sqrt(euclid)
+		return euclid

@@ -1,41 +1,29 @@
 import xml.etree.ElementTree as ET
 import re
 from nltk.corpus import stopwords
-import pandas as pd
-import numpy as np
-from gensim.models import Word2Vec
-from gensim.models import KeyedVectors
-import gzip
-import pickle as cPickle
 import numpy as np
 import pandas as pd
 from keras.preprocessing.text import Tokenizer
 import os
 import pickle
+from seq2seq import Seq2seq
 
 
 def preproc(data_path = 'data/data.xml'):
+
     tree = ET.parse(data_path)
     root = tree.getroot()
-
-#    EMBEDDING_FILE = './model/GoogleNews-vectors-negative300.bin'
-    # model = Word2Vec.load(EMBEDDING_FILE)
-
-#    word2vec = KeyedVectors.load_word2vec_format(EMBEDDING_FILE, \
-#                                                 binary=True)
-#    print("Loaded model")
 
     citylist = []
 
     counter = 0
     char_list = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKMNOPQRSTUVWXYZ "
-    char_threshold = 15
+    char_threshold = 100
 
     re_title = re.compile(r'title')
     re_revision = re.compile(r'revision')
-    re_text = re.compile(r'text')
     re_cutter = re.compile(r'.*?==', re.DOTALL)
-    MULT_SPACES = re.compile(r'\s+')
+    re_spaces = re.compile(r'\s+')
 
     count = 0
     for child in root:
@@ -51,27 +39,31 @@ def preproc(data_path = 'data/data.xml'):
             add_entry = True
             for subchild in child:
                 if re_title.search(subchild.tag):
-                    # print "TITLEEEE"
-                    # print subchild.text
                     key = subchild.text
-                    if key.startswith('Wikivoyage') or key.startswith('MediaWiki')or key.startswith('Template') or key.startswith('File') or key.startswith('Module') or key.startswith('Category') or key.startswith('Star articles'):
+                    # Delete pages that are not articles
+                    if key.startswith('Wikivoyage') or key.startswith('MediaWiki') or key.startswith('Template')\
+                            or key.startswith('File') or key.startswith('Module') or key.startswith('Category')\
+                            or key.startswith('Star articles'):
+                        add_entry = False
+                        break
+                    # Delete cities which letters are not in the latin alphabet
+                    if [char for char in key if char not in char_list]:
                         add_entry = False
                         break
                 if re_revision.search(subchild.tag):
-                    # print 'REVISION', subchild.tag, subchild.attrib
                     for text in subchild.findall('{http://www.mediawiki.org/xml/export-0.10/}text'):
                         description = text.text
-                        print(key)
                         if description is None or not description or len(description) > 0:
-                            # HANDLE #REDIRECT
-                            if "#REDIRECT" in description:
-                                add_entry = False
-                                break
-
+                            # Take just the description of the city
                             for section in re_cutter.finditer(description):  # Remove anything after first == appearance
                                 description = section.group(0)
                                 description = description[:-3]  # Remove also the == that were included in the regex
                                 break;
+
+                            # HANDLE #REDIRECT
+                            if "#REDIRECT" in description:
+                                add_entry = False
+                                break
 
                             # Handle &nbsp;
                             description = re.sub('&nbsp;', ' ', description)
@@ -111,7 +103,7 @@ def preproc(data_path = 'data/data.xml'):
 
                             # Get first two sentences of text
                             short_description = get_short_description(description)
-                            short_description = MULT_SPACES.sub(' ', short_description) # Make sure that there is just
+                            short_description = re_spaces.sub(' ', short_description) # Make sure that there is just
                                                                                         # one space between words.
                             if short_description[0] == ' ':
                                 short_description = short_description[1:]
@@ -127,8 +119,6 @@ def preproc(data_path = 'data/data.xml'):
                             # Remove unwanted characters
                             description_char = [char for char in description if char in char_list]
                             description = "".join(str(x) for x in description_char)
-                            # Remove stuff
-                            # description = re.sub("[\\\{\}\[\]\\n]", "", description)
                         else:
                             add_entry = False
                             break
@@ -136,20 +126,27 @@ def preproc(data_path = 'data/data.xml'):
             if add_entry:
                 citylist.append([key, short_description, description])
 
-            counter += 1
-            #if (counter >= 20):
+            #counter += 1
+            #if (counter >= 200):
             #    break;
 
 
     print("I parsed all the cities.")
+    print("Getting the description embeddings...")
     word_index, embedding_matrix = get_vocabulary(citylist, 200)
     descriptions = [row[2] for row in citylist]
-    vector = [vectorize(word_index, embedding_matrix, description, 200) for description in descriptions]
-    citylist = [x + [vector[i]] for i, x in enumerate(citylist)]
+    # Option 1
+    # vector = [vectorize(word_index, embedding_matrix, description, 200) for description in descriptions]
+    # Option 2
+    vector = vectorize_nn(word_index, embedding_matrix, descriptions, 200)
 
+    citylist = [x + [vector[i]] for i, x in enumerate(citylist)]
+    print("Every description has a vector representation.")
+    print("Saving...")
     df = pd.DataFrame([[key, s_d, d, v] for key,s_d,d,v in citylist])
     df.columns = ['city_name', "short_description", "description", "vector"]
-    df.to_csv("proc_data/proc_data.csv")
+    df.to_pickle("proc_data/proc_data.pkl")
+    print("The preprocesing is done")
 
 
 def get_short_description(description):
@@ -163,6 +160,42 @@ def get_short_description(description):
         description = None
 
     return description
+
+def vectorize_nn(word_index, embedding_matrix, sentences, num_features=200):
+
+    vec_sentences = []
+    for i, sentence in enumerate(sentences):
+        vector = []
+        mywords = sentence.split(" ")
+        count = 0
+        for word in mywords:
+            # print word
+            if word in word_index:
+                vector.append(embedding_matrix[word_index[word]])
+                count += 1
+        if count < 200:
+            while True:
+                tmp = [0 for i in range(200)]
+                vector.append(tmp)
+                if len(vector) == num_features:
+                    break
+        elif count > 200:
+            vector = vector[:200]
+            
+        vector = np.asarray(vector)
+        vec_sentences.append(vector)
+
+    s2s = Seq2seq(200,200,200,32, word_index, embedding_matrix)
+    vec_sentences = np.asarray(vec_sentences)
+    a = np.shape(vec_sentences)
+    vec_sentences = np.reshape(vec_sentences,(len(sentences), 200, 200))
+    a = np.shape(vec_sentences)
+    s2s.fit(vec_sentences,epochs=2)
+    predictions = s2s.predict(vec_sentences)
+    s2s.encoder.save('model/encoder.h5')
+    return predictions
+
+
 
 
 def vectorize(word_index, embedding_matrix, sentence, num_features=300):
@@ -186,10 +219,15 @@ def eucDistance(vector1, vector2):
         #print dim1, dim2
     euclid = np.sqrt(euclid)
     return euclid
+
+
 def maxDistance(vector1, vector2):
     return max(np.abs(np.substract(vector1,vector2)))
+
+
 def minDistance(vec1, vec2):
     return min(np.abs(np.substract(vec1,vec2)))
+
 
 def get_vocabulary(citylist, vec_size = 100):
 
@@ -198,7 +236,7 @@ def get_vocabulary(citylist, vec_size = 100):
 
     total_text = short_descriptions + descriptions
 
-    tokenizer = Tokenizer(num_words=100000)  # TODO: Check this hardcoded value. We could change it.
+    tokenizer = Tokenizer(num_words=55000)  # TODO: Check this hardcoded value. We could change it.
     tokenizer.fit_on_texts(total_text)
 
     word_index = tokenizer.word_index
@@ -230,4 +268,4 @@ def get_vocabulary(citylist, vec_size = 100):
     return word_index, embedding_matrix
 
 
-preproc()
+#preproc()
