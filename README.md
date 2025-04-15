@@ -4,6 +4,8 @@
 
 **Course:** Cognitive Computational Modeling of Language and Web Interaction
 
+A travel recommendation chatbot that suggests destinations based on descriptions provided by the user.
+
 ## DATA
 
 This work uses GloVe embeddings. You can download them from: https://nlp.stanford.edu/data
